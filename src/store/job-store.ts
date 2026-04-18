@@ -1,5 +1,5 @@
 import path from "node:path";
-import { CronJob, JobRunRecord } from "../core/types.js";
+import { CronJob, JobRunRecord, ScopedJob } from "../core/types.js";
 import { jobSchema, runRecordSchema } from "../core/schema.js";
 import { appendJsonLine, ensureDir, readJsonFile, removeFile, writeJsonFile } from "./fs.js";
 
@@ -70,6 +70,32 @@ export class JobStore {
     await appendJsonLine(this.getRunPath(run.jobId), runRecordSchema.parse(run));
   }
 
+  static async listAllJobs(rootDir: string): Promise<ScopedJob[]> {
+    const fs = await import("node:fs/promises");
+    const scopesRoot = path.join(rootDir, "scopes");
+
+    try {
+      const scopeEntries = await fs.readdir(scopesRoot, { withFileTypes: true });
+      const jobsByScope = await Promise.all(
+        scopeEntries
+          .filter((entry) => entry.isDirectory())
+          .map(async (entry) => {
+            const scope = entry.name;
+            const store = new JobStore(rootDir, scope);
+            const jobs = await store.listJobs();
+            return jobs.map((job) => ({ scope, job }));
+          }),
+      );
+
+      return jobsByScope.flat();
+    } catch (error) {
+      if (isNotFound(error)) {
+        return [];
+      }
+      throw error;
+    }
+  }
+
   getJobPath(jobId: string): string {
     return path.join(this.jobsDir, `${jobId}.json`);
   }
@@ -85,4 +111,13 @@ export class JobStore {
   getLogPath(jobId: string): string {
     return path.join(this.logsDir, `${jobId}.log`);
   }
+}
+
+function isNotFound(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "ENOENT"
+  );
 }

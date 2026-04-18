@@ -12,7 +12,7 @@ export const deliverySchema = z.object({
 });
 
 export const backendSchema = z.object({
-  kind: z.enum(["windows-task-scheduler", "launchd", "cron"]),
+  kind: z.enum(["gateway", "windows-task-scheduler", "launchd", "cron"]),
   command: z.string().min(1).optional(),
   extraArgs: z.array(z.string()).default([]),
 });
@@ -59,4 +59,6 @@ export const runRecordSchema = z.object({
 export const pluginOptionsSchema = z.object({
   rootDir: z.string().min(1).default("~/.config/opencode/cron"),
   defaultCommand: z.string().min(1).default("opencode"),
+  gatewayCommand: z.string().min(1).default("opencode-corn-gateway"),
+  gatewayPollIntervalMs: z.number().int().positive().max(3_600_000).default(30_000),
 });

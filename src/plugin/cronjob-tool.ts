@@ -1,8 +1,8 @@
 import { tool } from "@opencode-ai/plugin";
 import type { ToolContext } from "@opencode-ai/plugin/tool";
-import { createBackend } from "../backend/index.js";
 import { pluginOptionsSchema } from "../core/schema.js";
 import { CronJob } from "../core/types.js";
+import { ensureGatewayInfrastructure } from "../gateway/control.js";
 import { JobStore } from "../store/job-store.js";
 import { generateId } from "../utils/ids.js";
 import { createScopeId, normalizeAbsolutePath } from "../utils/paths.js";
@@ -33,19 +33,33 @@ const argsSchema = {
 
 export function createCronjobTool(options: unknown): ReturnType<typeof tool> {
   const parsedOptions = pluginOptionsSchema.parse(options);
+  const rootDir = normalizeAbsolutePath(parsedOptions.rootDir);
 
   return tool({
-    description: "Manage scheduled OpenCode jobs backed by OS-native schedulers.",
+    description: "Manage scheduled OpenCode jobs executed by the resident corn gateway.",
     args: argsSchema,
     async execute(args, context) {
-      return handleAction(parsedOptions.rootDir, parsedOptions.defaultCommand, args, context);
+      return handleAction(
+        {
+          rootDir,
+          defaultCommand: parsedOptions.defaultCommand,
+          gatewayCommand: parsedOptions.gatewayCommand,
+          gatewayPollIntervalMs: parsedOptions.gatewayPollIntervalMs,
+        },
+        args,
+        context,
+      );
     },
   });
 }
 
 async function handleAction(
-  rootDir: string,
-  defaultCommand: string,
+  options: {
+    rootDir: string;
+    defaultCommand: string;
+    gatewayCommand: string;
+    gatewayPollIntervalMs: number;
+  },
   args: {
     action: "create" | "list" | "get" | "update" | "pause" | "resume" | "run" | "remove";
     id?: string;
@@ -70,15 +84,19 @@ async function handleAction(
 ): Promise<string> {
   const workdir = normalizeAbsolutePath(args.workdir ?? context.directory);
   const scope = createScopeId(workdir);
-  const store = new JobStore(rootDir, scope);
-  const backend = createBackend();
+  const store = new JobStore(options.rootDir, scope);
   await store.initialize();
 
   switch (args.action) {
     case "create": {
       const job = createJob(args, workdir);
       await store.upsertJob(job);
-      await backend.install(job, defaultCommand);
+      await ensureGatewayInfrastructure({
+        rootDir: options.rootDir,
+        gatewayCommand: options.gatewayCommand,
+        defaultCommand: options.defaultCommand,
+        pollIntervalMs: options.gatewayPollIntervalMs,
+      });
       return JSON.stringify(job, null, 2);
     }
     case "list": {
@@ -99,7 +117,12 @@ async function handleAction(
       nextJob.nextRunAt = computeNextRun(nextJob.schedule, nextJob.timezone);
       await store.upsertJob(nextJob);
       if (nextJob.status === "enabled") {
-        await backend.install(nextJob, defaultCommand);
+        await ensureGatewayInfrastructure({
+          rootDir: options.rootDir,
+          gatewayCommand: options.gatewayCommand,
+          defaultCommand: options.defaultCommand,
+          pollIntervalMs: options.gatewayPollIntervalMs,
+        });
       }
       return JSON.stringify(nextJob, null, 2);
     }
@@ -109,7 +132,6 @@ async function handleAction(
       existing.status = "paused";
       existing.updatedAt = nowIso();
       await store.upsertJob(existing);
-      await backend.remove(existing);
       return JSON.stringify(existing, null, 2);
     }
     case "resume": {
@@ -119,7 +141,12 @@ async function handleAction(
       existing.updatedAt = nowIso();
       existing.nextRunAt = computeNextRun(existing.schedule, existing.timezone);
       await store.upsertJob(existing);
-      await backend.install(existing, defaultCommand);
+      await ensureGatewayInfrastructure({
+        rootDir: options.rootDir,
+        gatewayCommand: options.gatewayCommand,
+        defaultCommand: options.defaultCommand,
+        pollIntervalMs: options.gatewayPollIntervalMs,
+      });
       return JSON.stringify(existing, null, 2);
     }
     case "run": {
@@ -127,9 +154,9 @@ async function handleAction(
       const runnerModule = await import("../core/runner.js");
       const record = await runnerModule.runJob(
         {
-          rootDir,
+          rootDir: options.rootDir,
           scope,
-          command: defaultCommand,
+          command: options.defaultCommand,
         },
         args.id,
       );
@@ -138,7 +165,6 @@ async function handleAction(
     case "remove": {
       requireId(args.id);
       const existing = await loadExisting(store, args.id);
-      await backend.remove(existing);
       await store.deleteJob(existing.id);
       return JSON.stringify({ removed: existing.id }, null, 2);
     }
@@ -198,7 +224,7 @@ function createJob(
       failureWebhookUrl: args.failureWebhookUrl,
     },
     backend: {
-      kind: detectBackendKind(),
+      kind: "gateway",
       command: undefined,
       extraArgs: [],
     },
@@ -266,16 +292,5 @@ async function loadExisting(store: JobStore, id: string): Promise<CronJob> {
 function requireId(id: string | undefined): asserts id is string {
   if (!id) {
     throw new Error("action requires id.");
-  }
-}
-
-function detectBackendKind(): CronJob["backend"]["kind"] {
-  switch (process.platform) {
-    case "win32":
-      return "windows-task-scheduler";
-    case "darwin":
-      return "launchd";
-    default:
-      return "cron";
   }
 }

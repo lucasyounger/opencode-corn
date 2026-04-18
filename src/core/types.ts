@@ -5,7 +5,7 @@ export type CatchUpPolicy = "skip";
 export type DeliveryMode = "log" | "webhook";
 export type JobStatus = "enabled" | "paused";
 export type RunStatus = "success" | "failed" | "skipped";
-export type BackendKind = "windows-task-scheduler" | "launchd" | "cron";
+export type BackendKind = "gateway" | "windows-task-scheduler" | "launchd" | "cron";
 
 export interface DeliveryConfig {
   mode: DeliveryMode;
@@ -76,4 +76,9 @@ export interface RunnerContext {
   scope: string;
   command: string;
   environment?: Record<string, string>;
+}
+
+export interface ScopedJob {
+  scope: string;
+  job: CronJob;
 }

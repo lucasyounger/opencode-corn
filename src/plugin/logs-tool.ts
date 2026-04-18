@@ -6,6 +6,7 @@ import { createScopeId, normalizeAbsolutePath } from "../utils/paths.js";
 
 export function createCronLogsTool(options: unknown): ReturnType<typeof tool> {
   const parsedOptions = pluginOptionsSchema.parse(options);
+  const rootDir = normalizeAbsolutePath(parsedOptions.rootDir);
 
   return tool({
     description: "Read logs for a scheduled OpenCode job.",
@@ -16,7 +17,7 @@ export function createCronLogsTool(options: unknown): ReturnType<typeof tool> {
     async execute(args, context) {
       const workdir = normalizeAbsolutePath(args.workdir ?? context.directory);
       const scope = createScopeId(workdir);
-      const store = new JobStore(parsedOptions.rootDir, scope);
+      const store = new JobStore(rootDir, scope);
       try {
         return await fs.readFile(store.getLogPath(args.jobId), "utf8");
       } catch {

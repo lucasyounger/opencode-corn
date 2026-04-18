@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { pluginOptionsSchema } from "../core/schema.js";
 import { runJob } from "../core/runner.js";
+import { normalizeAbsolutePath } from "../utils/paths.js";
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
@@ -10,7 +11,7 @@ async function main(): Promise<void> {
 
   const scope = readFlag(args, "--scope");
   const jobId = readFlag(args, "--job");
-  const rootDir = readOptionalFlag(args, "--root") ?? pluginOptionsSchema.parse({}).rootDir;
+  const rootDir = normalizeAbsolutePath(readOptionalFlag(args, "--root") ?? pluginOptionsSchema.parse({}).rootDir);
   const command = readOptionalFlag(args, "--command") ?? pluginOptionsSchema.parse({}).defaultCommand;
 
   const record = await runJob(
