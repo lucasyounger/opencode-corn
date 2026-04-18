@@ -1,0 +1,28 @@
+{
+  "name": "opencode-corn",
+  "version": "0.1.0",
+  "description": "An OpenCode plugin that manages scheduled agent jobs through OS-native schedulers.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "opencode-corn-runner": "dist/src/bin/runner.js",
+    "opencode-corn-manage": "dist/src/bin/manage.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "pretest": "npm run build",
+    "test": "node --test dist/tests/**/*.test.js"
+  },
+  "dependencies": {
+    "@opencode-ai/plugin": "^1.4.7",
+    "@opencode-ai/sdk": "^1.4.7",
+    "cron-parser": "^5.2.0",
+    "zod": "^4.1.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.9",
+    "typescript": "^5.8.2"
+  }
+}
