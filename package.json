@@ -3,8 +3,13 @@
   "version": "0.2.0",
   "description": "An OpenCode plugin that manages scheduled agent jobs through a resident gateway service.",
   "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
   "bin": {
     "opencode-corn-gateway": "dist/src/bin/gateway.js",
     "opencode-corn-runner": "dist/src/bin/runner.js",
