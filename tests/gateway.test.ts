@@ -5,6 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import { CronJob } from "../src/core/types.js";
 import { selectDueJobs } from "../src/gateway/runtime.js";
+import { getGatewayLockPath } from "../src/gateway/paths.js";
+import { acquireLock } from "../src/store/lock.js";
 import { JobStore } from "../src/store/job-store.js";
 
 test("JobStore.listAllJobs returns jobs across scopes", async () => {
@@ -33,6 +35,18 @@ test("selectDueJobs only includes enabled jobs whose nextRunAt has passed", () =
   const due = selectDueJobs(entries, now).map((entry) => entry.job.id).sort();
 
   assert.deepEqual(due, ["due", "missing"]);
+});
+
+test("acquireLock creates the gateway directory when it does not exist", async () => {
+  const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-corn-lock-"));
+  const lockPath = getGatewayLockPath(rootDir);
+
+  const lock = await acquireLock(lockPath);
+
+  assert.ok(lock);
+  const stat = await fs.stat(lockPath);
+  assert.ok(stat.isFile());
+  await lock.release();
 });
 
 function buildJob(id: string, nextRunAt: string | undefined): CronJob {

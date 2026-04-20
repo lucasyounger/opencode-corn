@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { readJsonFile } from "../store/fs.js";
 import { getGatewayRuntimePath } from "./paths.js";
+import { buildGatewayServeArgs, resolveGatewayLauncher } from "./launcher.js";
 import { isGatewayRuntimeFresh } from "./runtime.js";
 import { createGatewayServiceManager } from "./service-manager.js";
 import { GatewayRuntimeState, GatewayServiceConfig } from "./types.js";
@@ -14,22 +15,11 @@ export async function ensureGatewayInfrastructure(config: GatewayServiceConfig):
     return;
   }
 
-  const child = spawn(
-    config.gatewayCommand,
-    [
-      "serve",
-      "--root",
-      config.rootDir,
-      "--command",
-      config.defaultCommand,
-      "--poll-ms",
-      String(config.pollIntervalMs),
-    ],
-    {
-      detached: true,
-      stdio: "ignore",
-      windowsHide: true,
-    },
-  );
+  const launcher = resolveGatewayLauncher(config.gatewayCommand);
+  const child = spawn(launcher.command, [...launcher.args, ...buildGatewayServeArgs(config)], {
+    detached: true,
+    stdio: "ignore",
+    windowsHide: true,
+  });
   child.unref();
 }

@@ -1,12 +1,15 @@
 import fs from "node:fs/promises";
+import path from "node:path";
 import { nowIso } from "../utils/time.js";
-import { removeFile } from "./fs.js";
+import { ensureDir, removeFile } from "./fs.js";
 
 export interface LockHandle {
   release(): Promise<void>;
 }
 
 export async function acquireLock(lockPath: string): Promise<LockHandle | undefined> {
+  await ensureDir(path.dirname(lockPath));
+
   try {
     const lock = await fs.readFile(lockPath, "utf8");
     const value = JSON.parse(lock) as { pid?: number };

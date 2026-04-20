@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { createOpencodeClient } from "@opencode-ai/sdk";
 import { CronJob, ExecutionResult, JobRunRecord, RunnerContext } from "./types.js";
+import { buildOpencodeRunArgs, resolveSpawnSpec } from "./process.js";
 import { renderPrompt } from "./prompt.js";
 import { JobStore } from "../store/job-store.js";
 import { acquireLock } from "../store/lock.js";
@@ -64,8 +65,9 @@ async function executeCli(
   environment?: Record<string, string>,
 ): Promise<ExecutionResult> {
   const command = job.backend.command ?? defaultCommand;
-  const args = ["run", "--non-interactive", "--print", renderPrompt(job)];
-  const child = spawn(command, args, {
+  const args = buildOpencodeRunArgs(renderPrompt(job));
+  const spawnSpec = resolveSpawnSpec(command, args);
+  const child = spawn(spawnSpec.command, spawnSpec.args, {
     cwd: job.workdir,
     env: { ...process.env, ...environment },
     stdio: ["ignore", "pipe", "pipe"],
