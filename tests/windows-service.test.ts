@@ -4,7 +4,7 @@ import { buildWindowsGatewayAutostartCommand, resolveWindowsGatewayLauncher } fr
 import { buildGatewayServeArgs, resolveGatewayLauncher } from "../src/gateway/launcher.js";
 
 test("resolveWindowsGatewayLauncher uses node plus bundled gateway entry for default command", () => {
-  const launcher = resolveWindowsGatewayLauncher("opencode-corn-gateway");
+  const launcher = resolveWindowsGatewayLauncher("opencode-cron-gateway");
 
   assert.equal(launcher.length, 2);
   assert.equal(launcher[0], `"${process.execPath}"`);
@@ -16,7 +16,7 @@ test("resolveWindowsGatewayLauncher uses node plus bundled gateway entry for def
 test("buildWindowsGatewayAutostartCommand renders a fully quoted command line", () => {
   const command = buildWindowsGatewayAutostartCommand({
     rootDir: "C:\\Users\\Lucas\\.config\\opencode\\cron",
-    gatewayCommand: "opencode-corn-gateway",
+    gatewayCommand: "opencode-cron-gateway",
     defaultCommand: "opencode",
     pollIntervalMs: 30_000,
   });
@@ -28,12 +28,37 @@ test("buildWindowsGatewayAutostartCommand renders a fully quoted command line", 
   assert.ok(command.endsWith('"--poll-ms" "30000"'));
 });
 
+test("buildWindowsGatewayAutostartCommand falls back to cmd wrapper when process.execPath is not node", () => {
+  const originalExecPath = process.execPath;
+  Object.defineProperty(process, "execPath", {
+    value: "C:\\Tools\\opencode.exe",
+    configurable: true,
+  });
+
+  try {
+    const command = buildWindowsGatewayAutostartCommand({
+      rootDir: "C:\\Users\\Lucas\\.config\\opencode\\cron",
+      gatewayCommand: "opencode-cron-gateway",
+      defaultCommand: "opencode",
+      pollIntervalMs: 30_000,
+    });
+
+    assert.match(command, new RegExp(`^"${escapeRegExp(process.env.ComSpec ?? "cmd.exe")}"`));
+    assert.match(command, /"\/d" "\/s" "\/c" "opencode-cron-gateway" "serve" /);
+  } finally {
+    Object.defineProperty(process, "execPath", {
+      value: originalExecPath,
+      configurable: true,
+    });
+  }
+});
+
 test("resolveGatewayLauncher uses node plus bundled gateway entry on Windows default command", () => {
   const originalPlatform = process.platform;
   Object.defineProperty(process, "platform", { value: "win32" });
 
   try {
-    const launcher = resolveGatewayLauncher("opencode-corn-gateway");
+    const launcher = resolveGatewayLauncher("opencode-cron-gateway");
     assert.equal(launcher.command, process.execPath);
     assert.equal(launcher.args.length, 1);
     assert.match(launcher.args[0] ?? "", /dist[\\/]+src[\\/]+bin[\\/]+gateway\.js$/);
@@ -42,10 +67,32 @@ test("resolveGatewayLauncher uses node plus bundled gateway entry on Windows def
   }
 });
 
+test("resolveGatewayLauncher falls back to node when process.execPath is not node on Windows", () => {
+  const originalPlatform = process.platform;
+  const originalExecPath = process.execPath;
+  Object.defineProperty(process, "platform", { value: "win32" });
+  Object.defineProperty(process, "execPath", {
+    value: "C:\\Tools\\opencode.exe",
+    configurable: true,
+  });
+
+  try {
+    const launcher = resolveGatewayLauncher("opencode-cron-gateway");
+    assert.equal(launcher.command, process.env.ComSpec ?? "cmd.exe");
+    assert.deepEqual(launcher.args, ["/d", "/s", "/c", "opencode-cron-gateway"]);
+  } finally {
+    Object.defineProperty(process, "platform", { value: originalPlatform });
+    Object.defineProperty(process, "execPath", {
+      value: originalExecPath,
+      configurable: true,
+    });
+  }
+});
+
 test("buildGatewayServeArgs returns the expected serve arguments", () => {
   const args = buildGatewayServeArgs({
     rootDir: "C:\\Users\\Lucas\\.config\\opencode\\cron",
-    gatewayCommand: "opencode-corn-gateway",
+    gatewayCommand: "opencode-cron-gateway",
     defaultCommand: "opencode",
     pollIntervalMs: 30_000,
   });
@@ -62,9 +109,9 @@ test("buildGatewayServeArgs returns the expected serve arguments", () => {
 });
 
 test("resolveWindowsGatewayLauncher preserves explicit gateway commands", () => {
-  const launcher = resolveWindowsGatewayLauncher("C:\\Tools\\opencode-corn-gateway.cmd");
+  const launcher = resolveWindowsGatewayLauncher("C:\\Tools\\opencode-cron-gateway.cmd");
 
-  assert.deepEqual(launcher, ['"C:\\Tools\\opencode-corn-gateway.cmd"']);
+  assert.deepEqual(launcher, ['"C:\\Tools\\opencode-cron-gateway.cmd"']);
 });
 
 function escapeRegExp(value: string): string {

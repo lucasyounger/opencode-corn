@@ -1,168 +1,244 @@
-# opencode-corn
+﻿# opencode-cron
 
-Run OpenCode jobs on a schedule with a resident gateway.
+`opencode-cron` 是一个面向 OpenCode 的定时任务插件。它允许你用自然语言创建周期性任务，但实际执行并不是为每个任务单独安装一个系统定时器，而是通过一个常驻的 Gateway 进程统一轮询、触发、执行和记录任务。
 
-`opencode-corn` is an [OpenCode](https://opencode.ai) plugin that lets you create recurring jobs in natural language. Unlike OS-driven schedulers that install one timer per job, `opencode-corn` keeps job definitions on disk and uses a long-lived gateway process to poll for due work and execute it.
+当前仓库的 npm 包名规划为 `@love-ai/opencode-cron`。本仓库当前阶段先完成代码和文档改名，暂不执行实际发布。
 
-This README is user-facing and is structured with the same bias as [different-ai/opencode-scheduler](https://github.com/different-ai/opencode-scheduler): quick install, examples, operational commands, and storage details. The implementation here is still specific to `opencode-corn`.
+## 项目定位
 
-## Features
+`opencode-cron` 适合这类场景：
 
-- Create scheduled OpenCode jobs through conversation
-- Manage jobs with `create`, `list`, `get`, `update`, `pause`, `resume`, `run`, and `remove`
-- Run jobs through a resident gateway instead of one OS timer per job
-- Store job definitions, run records, logs, and locks on disk
-- Support both `cli` and `attach` execution modes
-- Restart the gateway automatically through a platform startup hook
+- 每天定时检查代码仓库状态并生成日报
+- 每隔一段时间运行 OpenCode 任务
+- 通过 Webhook 在成功或失败时推送结果
+- 在本地机器上以较轻量的方式长期维护一组定时任务
 
-## Install
+与“每个任务一个系统 cron / schtasks 项”的方式不同，`opencode-cron` 的核心思路是：
 
-Install from npm:
+- 任务定义持久化到磁盘
+- Gateway 进程常驻运行
+- Gateway 固定间隔扫描到期任务
+- Runner 执行任务并写入日志、运行记录和下一次调度时间
+
+## 核心能力
+
+- 通过 OpenCode 插件工具创建、查询、更新、暂停、恢复、立即执行、删除任务
+- 支持 `cli` 与 `attach` 两种执行模式
+- 支持传递 `agent`、`model`、`skills`、`timeoutSeconds` 等执行参数
+- 支持日志读取与运行记录落盘
+- 支持通过 Webhook 投递执行结果
+- 支持 Windows、macOS、Linux 的开机/登录自动启动 Gateway
+- 支持作业级锁与 Gateway 全局锁，避免重复执行
+
+## 当前实现概览
+
+当前主执行链路如下：
+
+1. OpenCode 调用插件工具 `cronjob`
+2. `cronjob` 将任务写入本地存储
+3. 插件确保 Gateway 启动基础设施存在且在线
+4. Gateway 周期性扫描所有 scope 下的任务
+5. 到期任务交给 Runner 执行
+6. Runner 记录日志、run record、更新时间和下次运行时间
+7. 如果配置了 Webhook，则投递执行结果
+
+核心代码入口：
+
+- 插件入口：[src/index.ts](src/index.ts)
+- 任务工具：[src/plugin/cronjob-tool.ts](src/plugin/cronjob-tool.ts)
+- 日志工具：[src/plugin/logs-tool.ts](src/plugin/logs-tool.ts)
+- Gateway 控制：[src/gateway/control.ts](src/gateway/control.ts)
+- Gateway 运行时：[src/gateway/runtime.ts](src/gateway/runtime.ts)
+- Runner：[src/core/runner.ts](src/core/runner.ts)
+- 存储：[src/store/job-store.ts](src/store/job-store.ts)
+
+## 安装方式
+
+### 1. 本地开发安装
+
+当前仓库尚未发布到 npm，开发阶段建议直接在仓库根目录安装：
 
 ```bash
-npm install -g opencode-corn
+npm install -g .
 ```
 
-Or install the local package built from this repo:
+如果只想打包验证发布产物，可以执行：
 
 ```bash
-npm install -g ./opencode-corn-0.2.0.tgz
+npm pack
 ```
 
-This package installs three binaries:
+### 2. 未来发布后的安装方式
 
-- `opencode-corn-gateway`
-- `opencode-corn-runner`
-- `opencode-corn-manage`
+发布后，推荐安装命令会是：
 
-Defined in [package.json](L:/Data/opencode-corn/package.json:8).
+```bash
+npm install -g @love-ai/opencode-cron
+```
 
-## Load In OpenCode
+### 3. 构建
 
-Create a local plugin file in your project:
+仓库开发时需要先构建 TypeScript 输出：
+
+```bash
+npm install
+npm run build
+```
+
+## 在 OpenCode 中加载插件
+
+如果你是在本仓库里本地开发和测试插件，可以创建：
 
 ```ts
-// .opencode/plugins/opencode-corn.ts
-export { OpencodeCornPlugin as default } from "../../dist/src/index.js"
+// .opencode/plugins/opencode-cron.ts
+export { default } from "../../dist/src/index.js"
 ```
 
-The plugin exports two tools:
+当前插件导出两个工具：
 
 - `cronjob`
 - `cron_logs`
 
-Source:
+## 快速开始
 
-- [src/index.ts](L:/Data/opencode-corn/src/index.ts:5)
+### 1. 创建一个每天 9 点执行的任务
 
-## Quick Start
-
-Open an OpenCode session in your project and say:
+在 OpenCode 会话里直接说：
 
 ```text
-Please create a corn job in this project:
-- name: git-status-minute
-- cron: * * * * *
-- timezone: Asia/Shanghai
-- mode: cli
-- timeout: 120 seconds
-- task: check git status --short and summarize whether there are uncommitted changes
+请在当前项目创建一个 cron 任务：
+- 名称：repo-daily-report
+- cron：0 9 * * *
+- 时区：Asia/Shanghai
+- 模式：cli
+- 超时：180 秒
+- 任务：检查最近 24 小时的代码变更，并输出新增文件、修改文件、潜在风险和建议关注点
 ```
 
-Then ask:
+### 2. 立即执行一次
 
 ```text
-Run that job now.
+立即运行刚才那个任务。
 ```
 
-And later:
+### 3. 查看日志
 
 ```text
-Show me the logs for that job.
+查看刚才那个任务的日志。
 ```
 
-## Job Management
+## 支持的管理动作
 
-You can manage jobs entirely through conversation:
+`cronjob` 工具当前支持以下动作：
 
-| Action | Example |
-|------|------|
-| Create | `Schedule a corn job every day at 9am to summarize repo status` |
-| List | `Show all corn jobs in this project` |
-| Get | `Show details for job <job-id>` |
-| Update | `Update job <job-id> to run every 6 hours` |
-| Pause | `Pause job <job-id>` |
-| Resume | `Resume job <job-id>` |
-| Run now | `Run job <job-id> now` |
-| Logs | `Show logs for job <job-id>` |
-| Remove | `Delete job <job-id>` |
+- `create`
+- `list`
+- `get`
+- `update`
+- `pause`
+- `resume`
+- `run`
+- `remove`
 
-Implemented in [src/plugin/cronjob-tool.ts](L:/Data/opencode-corn/src/plugin/cronjob-tool.ts:56) and [src/plugin/logs-tool.ts](L:/Data/opencode-corn/src/plugin/logs-tool.ts:7).
+典型自然语言示例：
 
-## How It Works
+- 创建任务：`请在当前项目创建一个每天早上 9 点执行的 cron 任务，生成代码日报。`
+- 列出任务：`列出当前项目的所有 cron 任务。`
+- 查看详情：`查看任务 <job-id> 的详情。`
+- 更新任务：`把任务 <job-id> 改成每 6 小时执行一次。`
+- 暂停任务：`暂停任务 <job-id>。`
+- 恢复任务：`恢复任务 <job-id>。`
+- 立即执行：`立即运行任务 <job-id>。`
+- 查看日志：`查看任务 <job-id> 的日志。`
+- 删除任务：`删除任务 <job-id>。`
 
-1. OpenCode calls the `cronjob` tool
-2. The tool writes a scoped job definition to local storage
-3. The plugin ensures the resident gateway is installed and running
-4. The gateway scans all stored jobs on a fixed interval
-5. Due jobs are executed by the runner
-6. The runner appends logs and run history, then updates `nextRunAt`
+## 任务字段说明
 
-Relevant code:
+创建或更新任务时，当前实现支持这些关键字段：
 
-- Gateway bootstrap: [src/gateway/control.ts](L:/Data/opencode-corn/src/gateway/control.ts:8)
-- Gateway runtime: [src/gateway/runtime.ts](L:/Data/opencode-corn/src/gateway/runtime.ts:48)
-- Runner: [src/core/runner.ts](L:/Data/opencode-corn/src/core/runner.ts:13)
+- `name`：任务名
+- `prompt`：实际执行任务的提示词
+- `schedule`：标准 5 段 cron 表达式
+- `timezone`：IANA 时区名称，例如 `Asia/Shanghai`
+- `workdir`：任务工作目录
+- `mode`：`cli` 或 `attach`
+- `attachUrl`：`attach` 模式连接的 OpenCode 服务地址
+- `sessionStrategy`：`new` 或 `reuse`
+- `sessionId`：复用会话时使用
+- `agent`：指定 OpenCode agent
+- `providerID` / `modelID`：指定模型
+- `skills`：附加 skills 列表
+- `timeoutSeconds`：超时时间，最大 86400 秒
+- `webhookUrl`：成功时投递地址
+- `failureWebhookUrl`：失败时投递地址
 
-## Execution Modes
+内部默认值见 [src/core/schema.ts](src/core/schema.ts) 和 [src/plugin/cronjob-tool.ts](src/plugin/cronjob-tool.ts)。
+
+## 执行模式
 
 ### `cli`
 
-Spawns a fresh OpenCode command:
+`cli` 模式会启动一个新的 `opencode run` 子进程执行任务。当前实现会：
 
-```text
-opencode run --non-interactive --print <rendered prompt>
-```
+- 自动使用无人值守的一次性执行提示词包装任务
+- 在配置了 `agent` / `model` 时自动传给 `opencode run`
+- 在 Windows 上通过 `taskkill /T /F` 回收超时进程树
 
-This is the easiest mode to run locally.
+对应实现：
+
+- [src/core/process.ts](src/core/process.ts)
+- [src/core/prompt.ts](src/core/prompt.ts)
+- [src/core/runner.ts](src/core/runner.ts)
 
 ### `attach`
 
-Connects to an existing OpenCode backend via `@opencode-ai/sdk`, creates or reuses a session, and submits the prompt directly.
+`attach` 模式通过 `@opencode-ai/sdk` 连接现有 OpenCode 服务执行任务，适合复用远端或常驻服务。
 
-Implementation:
+## CLI 命令
 
-- [src/core/runner.ts](L:/Data/opencode-corn/src/core/runner.ts:61)
-- [src/core/runner.ts](L:/Data/opencode-corn/src/core/runner.ts:100)
+安装后会提供三个命令：
 
-## Gateway CLI
+- `opencode-cron-gateway`
+- `opencode-cron-runner`
+- `opencode-cron-manage`
 
-`opencode-corn-gateway` supports:
+### Gateway
 
-- `serve`
-- `install-service`
-- `uninstall-service`
-- `status`
+```bash
+opencode-cron-gateway status --root <rootDir>
+opencode-cron-gateway serve --root <rootDir>
+opencode-cron-gateway install-service --root <rootDir>
+opencode-cron-gateway uninstall-service --root <rootDir>
+```
 
-Source:
+### Runner
 
-- [src/bin/gateway.ts](L:/Data/opencode-corn/src/bin/gateway.ts:11)
+```bash
+opencode-cron-runner run --scope <scope> --job <jobId> --root <rootDir>
+```
 
-## Storage
+### Manage
 
-Default root directory:
+```bash
+opencode-cron-manage <rootDir> <scope>
+```
+
+## 存储结构
+
+默认根目录：
 
 ```text
 ~/.config/opencode/cron
 ```
 
-Layout:
+目录结构：
 
 ```text
 rootDir/
   gateway/
     runtime.json
     gateway.lock.json
+    gateway.log
   scopes/
     <scope>/
       jobs/
@@ -176,55 +252,67 @@ rootDir/
       <jobId>.log
 ```
 
-Storage code:
+说明：
 
-- [src/store/job-store.ts](L:/Data/opencode-corn/src/store/job-store.ts:6)
-- [src/gateway/paths.ts](L:/Data/opencode-corn/src/gateway/paths.ts:3)
+- `jobs/*.json` 保存任务定义
+- `runs/*.jsonl` 保存每次运行记录
+- `locks/*.lock.json` 用于防止同一任务并发执行
+- `logs/*.log` 保存文本日志
+- `gateway/runtime.json` 记录 Gateway 心跳和活动任务
 
-## Reliability
+## 平台启动方式
 
-- One gateway process at a time through a global gateway lock
-- One active execution per job through job-level locks
-- Stale lock cleanup based on PID liveness
-- Heartbeat state in `runtime.json`
-- Timeout control per job
-- Manual `run now` path that bypasses the poll wait
+当前 Gateway 自动启动策略：
 
-Known current limits:
+- Windows：写入 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`
+- macOS：写入 `LaunchAgent`
+- Linux：写入 `systemd --user` service
 
-- No retry or backoff
-- No missed-run catch-up
-- Startup integration is user-level by default
+对应实现：
 
-## Platform Startup Model
+- [src/gateway/service/windows.ts](src/gateway/service/windows.ts)
+- [src/gateway/service/launchd.ts](src/gateway/service/launchd.ts)
+- [src/gateway/service/linux-systemd.ts](src/gateway/service/linux-systemd.ts)
 
-`opencode-corn` does not install one OS scheduler entry per job. It installs a startup hook for the resident gateway.
+## 故障排查
 
-| Platform | Startup integration | Result |
-|------|------|------|
-| macOS | `LaunchAgent` | Starts when the user session loads |
-| Linux | `systemd --user` | User-level service |
-| Windows | `schtasks /SC ONLOGON` | Starts after user logon |
+### 1. 任务创建成功但不执行
 
-Managers:
+建议按下面顺序检查：
 
-- [src/gateway/service/launchd.ts](L:/Data/opencode-corn/src/gateway/service/launchd.ts:10)
-- [src/gateway/service/linux-systemd.ts](L:/Data/opencode-corn/src/gateway/service/linux-systemd.ts:10)
-- [src/gateway/service/windows.ts](L:/Data/opencode-corn/src/gateway/service/windows.ts:7)
+1. 查看 Gateway 状态：`opencode-cron-gateway status --root <rootDir>`
+2. 检查 `gateway/runtime.json` 是否有新心跳
+3. 检查任务的 `nextRunAt` 是否正确
+4. 检查 `logs/<scope>/<jobId>.log` 是否有输出
+5. 检查 `runs/<jobId>.jsonl` 是否写入记录
 
-## Defaults
+### 2. 任务长时间卡住
 
-Current defaults:
+- 优先检查 `timeoutSeconds` 是否设置过大
+- 在 Windows 上，超时后当前实现会尝试强制结束整棵进程树
+- 如果任务本身依赖外部服务，仍建议在 prompt 中明确约束输出范围与执行边界
 
-```text
-rootDir = ~/.config/opencode/cron
-defaultCommand = opencode
-gatewayCommand = opencode-corn-gateway
-gatewayPollIntervalMs = 30000
+### 3. 重复执行或跳过执行
+
+- Gateway 全局锁防止同一 rootDir 启动多个 Gateway
+- 任务级锁防止同一任务重叠执行
+- 如果锁文件残留但进程已不存在，当前实现会清理 stale lock
+
+## 当前限制
+
+当前版本仍有一些明确限制：
+
+- 不支持自动重试或退避
+- 不支持 missed run 补跑
+- `remove` 目前删除任务定义和锁，不主动清理历史 run/log 文件
+- 仓库中仍保留了 `src/backend/*` 这一组历史后端实现，但当前主链路已经统一走 Gateway 模式
+
+## 开发与测试
+
+```bash
+npm install
+npm run build
+npm test
 ```
 
-Defined in [src/core/schema.ts](L:/Data/opencode-corn/src/core/schema.ts:59).
-
-## More Detail
-
-The detailed architecture, persistence model, and execution flow are documented in [opencode-corn.md](L:/Data/opencode-corn/opencode-corn.md).
+如果你想进一步理解实现细节，请继续阅读设计文档：[opencode-cron.md](opencode-cron.md)

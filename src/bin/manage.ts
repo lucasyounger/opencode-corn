@@ -4,7 +4,7 @@ import { JobStore } from "../store/job-store.js";
 async function main(): Promise<void> {
   const [rootDir, scope] = process.argv.slice(2);
   if (!rootDir || !scope) {
-    throw new Error("Usage: opencode-corn-manage <rootDir> <scope>");
+    throw new Error("Usage: opencode-cron-manage <rootDir> <scope>");
   }
 
   const store = new JobStore(rootDir, scope);

@@ -28,7 +28,7 @@ async function main(): Promise<void> {
     }
     default:
       throw new Error(
-        "Usage: opencode-corn-gateway <serve|install-service|uninstall-service|status> [--root <dir>] [--command <cmd>] [--gateway-command <cmd>] [--poll-ms <ms>]",
+        "Usage: opencode-cron-gateway <serve|install-service|uninstall-service|status> [--root <dir>] [--command <cmd>] [--gateway-command <cmd>] [--poll-ms <ms>]",
       );
   }
 }

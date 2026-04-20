@@ -25,7 +25,7 @@ export class LinuxSystemdGatewayServiceManager implements GatewayServiceManager 
   }
 
   private getUnitName(): string {
-    return "opencode-corn-gateway.service";
+    return "opencode-cron-gateway.service";
   }
 
   private getUnitPath(): string {
@@ -35,7 +35,7 @@ export class LinuxSystemdGatewayServiceManager implements GatewayServiceManager 
 
 function renderService(config: GatewayServiceConfig): string {
   return `[Unit]
-Description=OpenCode Corn Gateway
+Description=OpenCode Cron Gateway
 
 [Service]
 Type=simple

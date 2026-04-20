@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { once } from "node:events";
+import { promisify } from "node:util";
 import { createOpencodeClient } from "@opencode-ai/sdk";
 import { CronJob, ExecutionResult, JobRunRecord, RunnerContext } from "./types.js";
 import { buildOpencodeRunArgs, resolveSpawnSpec } from "./process.js";
@@ -10,6 +11,8 @@ import { acquireLock } from "../store/lock.js";
 import { generateId } from "../utils/ids.js";
 import { nowIso, computeNextRun } from "../utils/time.js";
 import { deliverRun } from "./delivery.js";
+
+const execFileAsync = promisify(execFile);
 
 export async function runJob(context: RunnerContext, jobId: string): Promise<JobRunRecord> {
   const store = new JobStore(context.rootDir, context.scope);
@@ -65,7 +68,10 @@ async function executeCli(
   environment?: Record<string, string>,
 ): Promise<ExecutionResult> {
   const command = job.backend.command ?? defaultCommand;
-  const args = buildOpencodeRunArgs(renderPrompt(job));
+  const args = buildOpencodeRunArgs(renderPrompt(job), {
+    agent: job.agent,
+    model: job.model,
+  });
   const spawnSpec = resolveSpawnSpec(command, args);
   const child = spawn(spawnSpec.command, spawnSpec.args, {
     cwd: job.workdir,
@@ -79,13 +85,26 @@ async function executeCli(
   child.stdout.on("data", (chunk: Buffer) => stdoutChunks.push(chunk));
   child.stderr.on("data", (chunk: Buffer) => stderrChunks.push(chunk));
 
-  const timeoutHandle = setTimeout(() => child.kill("SIGTERM"), job.timeoutSeconds * 1000);
+  let timedOut = false;
+  const timeoutHandle = setTimeout(() => {
+    timedOut = true;
+    void terminateChildProcess(child);
+  }, job.timeoutSeconds * 1000);
   const [exitCode] = (await once(child, "close")) as [number | null];
   clearTimeout(timeoutHandle);
 
   const stdout = Buffer.concat(stdoutChunks).toString("utf8");
   const stderr = Buffer.concat(stderrChunks).toString("utf8");
   const output = [stdout.trim(), stderr.trim()].filter(Boolean).join("\n");
+
+  if (timedOut) {
+    return {
+      status: "failed",
+      output,
+      exitCode: exitCode ?? -1,
+      reason: "timeout",
+    };
+  }
 
   if (exitCode === 0) {
     return { status: "success", output, exitCode: 0 };
@@ -97,6 +116,24 @@ async function executeCli(
     exitCode: exitCode ?? -1,
     reason: "cli-exit-nonzero",
   };
+}
+
+async function terminateChildProcess(child: ReturnType<typeof spawn>): Promise<void> {
+  const pid = child.pid;
+  if (!pid) {
+    child.kill("SIGTERM");
+    return;
+  }
+
+  if (process.platform === "win32") {
+    await execFileAsync("taskkill.exe", ["/PID", String(pid), "/T", "/F"], {
+      windowsHide: true,
+    }).catch(() => undefined);
+    return;
+  }
+
+  child.kill("SIGTERM");
+  setTimeout(() => child.kill("SIGKILL"), 5_000).unref();
 }
 
 async function executeAttach(job: CronJob): Promise<ExecutionResult> {

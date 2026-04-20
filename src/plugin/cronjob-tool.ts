@@ -36,7 +36,7 @@ export function createCronjobTool(options: unknown): ReturnType<typeof tool> {
   const rootDir = normalizeAbsolutePath(parsedOptions.rootDir);
 
   return tool({
-    description: "Manage scheduled OpenCode jobs executed by the resident corn gateway.",
+    description: "Manage scheduled OpenCode jobs executed by the resident cron gateway.",
     args: argsSchema,
     async execute(args, context) {
       return handleAction(

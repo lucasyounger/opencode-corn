@@ -6,7 +6,7 @@ import { GatewayServiceConfig } from "../types.js";
 
 const execFileAsync = promisify(execFile);
 const RUN_KEY = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run";
-const RUN_VALUE_NAME = "OpenCodeCornGateway";
+const RUN_VALUE_NAME = "OpenCodeCronGateway";
 
 export class WindowsGatewayServiceManager implements GatewayServiceManager {
   async install(config: GatewayServiceConfig): Promise<void> {

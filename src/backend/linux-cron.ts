@@ -29,11 +29,11 @@ export class LinuxCronBackend implements SchedulerBackend {
   }
 
   private getMarker(job: CronJob): string {
-    return `opencode-corn:${job.id}`;
+    return `opencode-cron:${job.id}`;
   }
 
   private getCronFilePath(): string {
-    return path.join(os.homedir(), ".config", "opencode-corn", "cron.tab");
+    return path.join(os.homedir(), ".config", "opencode-cron", "cron.tab");
   }
 }
 

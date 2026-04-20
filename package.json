@@ -1,6 +1,6 @@
 {
-  "name": "opencode-corn",
-  "version": "0.2.3",
+  "name": "@love-ai/opencode-cron",
+  "version": "0.0.1",
   "description": "An OpenCode plugin that manages scheduled agent jobs through a resident gateway service.",
   "type": "module",
   "main": "dist/src/index.js",
@@ -11,9 +11,20 @@
     "README.md"
   ],
   "bin": {
-    "opencode-corn-gateway": "dist/src/bin/gateway.js",
-    "opencode-corn-runner": "dist/src/bin/runner.js",
-    "opencode-corn-manage": "dist/src/bin/manage.js"
+    "opencode-cron-gateway": "dist/src/bin/gateway.js",
+    "opencode-cron-runner": "dist/src/bin/runner.js",
+    "opencode-cron-manage": "dist/src/bin/manage.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lucasyounger/opencode-cron.git"
+  },
+  "homepage": "https://github.com/lucasyounger/opencode-cron",
+  "bugs": {
+    "url": "https://github.com/lucasyounger/opencode-cron/issues"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

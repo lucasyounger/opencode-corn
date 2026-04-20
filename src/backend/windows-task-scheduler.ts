@@ -32,7 +32,7 @@ export class WindowsTaskSchedulerBackend implements SchedulerBackend {
   }
 
   private getTaskName(job: CronJob): string {
-    return `\\OpenCodeCorn\\${job.name}-${job.id}`;
+    return `\\OpenCodeCron\\${job.name}-${job.id}`;
   }
 }
 

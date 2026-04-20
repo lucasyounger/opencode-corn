@@ -6,7 +6,7 @@ import { normalizeAbsolutePath } from "../utils/paths.js";
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   if (args[0] !== "run") {
-    throw new Error("Usage: opencode-corn-runner run --scope <scope> --job <job-id> [--root <dir>] [--command <cmd>]");
+    throw new Error("Usage: opencode-cron-runner run --scope <scope> --job <job-id> [--root <dir>] [--command <cmd>]");
   }
 
   const scope = readFlag(args, "--scope");

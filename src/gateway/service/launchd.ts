@@ -35,7 +35,7 @@ export class LaunchdGatewayServiceManager implements GatewayServiceManager {
   }
 
   private getLabel(): string {
-    return "ai.opencode.corn.gateway";
+    return "ai.opencode.cron.gateway";
   }
 
   private getPlistPath(): string {

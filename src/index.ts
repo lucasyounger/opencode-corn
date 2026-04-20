@@ -2,7 +2,7 @@ import type { Plugin } from "@opencode-ai/plugin";
 import { createCronjobTool } from "./plugin/cronjob-tool.js";
 import { createCronLogsTool } from "./plugin/logs-tool.js";
 
-export const OpencodeCornPlugin: Plugin = async (input, options) => {
+export const OpencodeCronPlugin: Plugin = async (input, options) => {
   return {
     tool: {
       cronjob: createCronjobTool(options),
@@ -13,7 +13,7 @@ export const OpencodeCornPlugin: Plugin = async (input, options) => {
         await input.client.app
           .log({
             body: {
-              service: "opencode-corn",
+              service: "opencode-cron",
               level: "error",
               message: JSON.stringify(event),
             },
@@ -24,7 +24,9 @@ export const OpencodeCornPlugin: Plugin = async (input, options) => {
   };
 };
 
-export default {
-  id: "opencode-corn",
-  server: OpencodeCornPlugin,
-};
+export const OpencodeCronPluginModule = Object.assign(OpencodeCronPlugin, {
+  id: "opencode-cron",
+  server: OpencodeCronPlugin,
+});
+
+export default OpencodeCronPluginModule;

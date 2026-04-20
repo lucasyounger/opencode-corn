@@ -10,6 +10,27 @@ test("buildOpencodeRunArgs matches the current OpenCode CLI contract", () => {
   ]);
 });
 
+test("buildOpencodeRunArgs passes through configured agent and model", () => {
+  assert.deepEqual(
+    buildOpencodeRunArgs("git status", {
+      agent: "plan",
+      model: {
+        providerID: "opencode",
+        modelID: "gpt-5-nano",
+      },
+    }),
+    [
+      "run",
+      "--dangerously-skip-permissions",
+      "--agent",
+      "plan",
+      "--model",
+      "opencode/gpt-5-nano",
+      "git status",
+    ],
+  );
+});
+
 test("resolveSpawnSpec returns passthrough on non-Windows", () => {
   const originalPlatform = process.platform;
   Object.defineProperty(process, "platform", { value: "linux" });

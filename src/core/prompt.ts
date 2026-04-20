@@ -7,11 +7,16 @@ export function renderPrompt(job: CronJob): string {
       : `Enabled skills:\n${job.skills.map((skill) => `- ${skill}`).join("\n")}\n\n`;
 
   return [
-    "You are running inside a scheduled OpenCode automation job.",
-    "Do not create or modify cron jobs from inside this run.",
-    "If the task cannot be completed safely, explain why and stop.",
+    "This is an unattended one-shot execution.",
+    "No follow-up messages will arrive.",
+    "Complete the task now instead of asking for more instructions.",
+    "Use the current workspace and available tools as needed.",
+    "Do not create new recurring work from inside this run.",
+    "Return only the final result.",
     "",
     skillSection,
+    "Task:",
+    "",
     job.prompt.trim(),
   ]
     .filter((part) => part.length > 0)

@@ -27,7 +27,7 @@ export class LaunchdBackend implements SchedulerBackend {
   }
 
   private getLabel(job: CronJob): string {
-    return `ai.opencode.corn.${job.id}`;
+    return `ai.opencode.cron.${job.id}`;
   }
 
   private getPlistPath(job: CronJob): string {

@@ -10,7 +10,7 @@ import { acquireLock } from "../src/store/lock.js";
 import { JobStore } from "../src/store/job-store.js";
 
 test("JobStore.listAllJobs returns jobs across scopes", async () => {
-  const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-corn-"));
+  const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-cron-"));
   const alphaStore = new JobStore(rootDir, "alpha");
   const betaStore = new JobStore(rootDir, "beta");
 
@@ -38,7 +38,7 @@ test("selectDueJobs only includes enabled jobs whose nextRunAt has passed", () =
 });
 
 test("acquireLock creates the gateway directory when it does not exist", async () => {
-  const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-corn-lock-"));
+  const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-cron-lock-"));
   const lockPath = getGatewayLockPath(rootDir);
 
   const lock = await acquireLock(lockPath);
