@@ -1,6 +1,6 @@
 import { tool } from "@opencode-ai/plugin";
 import type { ToolContext } from "@opencode-ai/plugin/tool";
-import { pluginOptionsSchema } from "../core/schema.js";
+import { parsePluginOptions } from "../core/schema.js";
 import { CronJob } from "../core/types.js";
 import { ensureGatewayInfrastructure } from "../gateway/control.js";
 import { JobStore } from "../store/job-store.js";
@@ -32,7 +32,7 @@ const argsSchema = {
 };
 
 export function createCronjobTool(options: unknown): ReturnType<typeof tool> {
-  const parsedOptions = pluginOptionsSchema.parse(options);
+  const parsedOptions = parsePluginOptions(options);
   const rootDir = normalizeAbsolutePath(parsedOptions.rootDir);
 
   return tool({

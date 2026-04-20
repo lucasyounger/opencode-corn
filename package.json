@@ -1,6 +1,6 @@
 {
   "name": "opencode-corn",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "An OpenCode plugin that manages scheduled agent jobs through a resident gateway service.",
   "type": "module",
   "main": "dist/src/index.js",

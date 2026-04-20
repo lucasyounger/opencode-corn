@@ -1,11 +1,11 @@
 import fs from "node:fs/promises";
 import { tool } from "@opencode-ai/plugin";
-import { pluginOptionsSchema } from "../core/schema.js";
+import { parsePluginOptions } from "../core/schema.js";
 import { JobStore } from "../store/job-store.js";
 import { createScopeId, normalizeAbsolutePath } from "../utils/paths.js";
 
 export function createCronLogsTool(options: unknown): ReturnType<typeof tool> {
-  const parsedOptions = pluginOptionsSchema.parse(options);
+  const parsedOptions = parsePluginOptions(options);
   const rootDir = normalizeAbsolutePath(parsedOptions.rootDir);
 
   return tool({

@@ -62,3 +62,7 @@ export const pluginOptionsSchema = z.object({
   gatewayCommand: z.string().min(1).default("opencode-corn-gateway"),
   gatewayPollIntervalMs: z.number().int().positive().max(3_600_000).default(30_000),
 });
+
+export function parsePluginOptions(input: unknown) {
+  return pluginOptionsSchema.parse(input ?? {});
+}
