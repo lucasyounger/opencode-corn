@@ -1,6 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildOpencodeRunArgs, resolveSpawnSpec } from "../src/core/process.js";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import {
+  buildOpencodeRunArgs,
+  resolveAvailableRunCommand,
+  resolveRunCommandCandidates,
+  resolveSpawnSpec,
+} from "../src/core/process.js";
 
 test("buildOpencodeRunArgs matches the current OpenCode CLI contract", () => {
   assert.deepEqual(buildOpencodeRunArgs("git status"), [
@@ -29,6 +37,39 @@ test("buildOpencodeRunArgs passes through configured agent and model", () => {
       "git status",
     ],
   );
+});
+
+test("resolveRunCommandCandidates prefers opencode and falls back to nga", () => {
+  assert.deepEqual(resolveRunCommandCandidates("auto"), ["opencode", "nga"]);
+  assert.deepEqual(resolveRunCommandCandidates("opencode"), ["opencode", "nga"]);
+  assert.deepEqual(resolveRunCommandCandidates("nga"), ["nga", "opencode"]);
+  assert.deepEqual(resolveRunCommandCandidates("custom-cli"), ["custom-cli"]);
+});
+
+test("resolveAvailableRunCommand falls back to nga when opencode is unavailable", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-cron-process-"));
+  const ngaCommand = path.join(tempDir, process.platform === "win32" ? "nga.cmd" : "nga");
+  await fs.writeFile(ngaCommand, "", "utf8");
+
+  const resolved = await resolveAvailableRunCommand("opencode", {
+    PATH: tempDir,
+    PATHEXT: ".CMD;.EXE",
+  });
+
+  assert.equal(resolved, "nga");
+});
+
+test("resolveAvailableRunCommand returns a custom command without extra aliases", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-cron-custom-"));
+  const customCommand = path.join(tempDir, process.platform === "win32" ? "custom-cli.cmd" : "custom-cli");
+  await fs.writeFile(customCommand, "", "utf8");
+
+  const resolved = await resolveAvailableRunCommand("custom-cli", {
+    PATH: tempDir,
+    PATHEXT: ".CMD;.EXE",
+  });
+
+  assert.equal(resolved, "custom-cli");
 });
 
 test("resolveSpawnSpec returns passthrough on non-Windows", () => {

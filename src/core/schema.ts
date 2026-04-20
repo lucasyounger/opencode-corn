@@ -58,7 +58,7 @@ export const runRecordSchema = z.object({
 
 export const pluginOptionsSchema = z.object({
   rootDir: z.string().min(1).default("~/.config/opencode/cron"),
-  defaultCommand: z.string().min(1).default("opencode"),
+  defaultCommand: z.string().min(1).default("auto"),
   gatewayCommand: z.string().min(1).default("opencode-cron-gateway"),
   gatewayPollIntervalMs: z.number().int().positive().max(3_600_000).default(30_000),
 });

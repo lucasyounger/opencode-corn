@@ -1,10 +1,18 @@
+import fs from "node:fs/promises";
 import path from "node:path";
 import { CronJob, JobRunRecord, ScopedJob } from "../core/types.js";
 import { jobSchema, runRecordSchema } from "../core/schema.js";
 import { appendJsonLine, ensureDir, readJsonFile, removeFile, writeJsonFile } from "./fs.js";
+import { createLegacyScopeId, createScopeId } from "../utils/paths.js";
+
+export interface ResolvedJobStores {
+  preferredScope: string;
+  primaryStore: JobStore;
+  stores: JobStore[];
+}
 
 export class JobStore {
-  constructor(private readonly rootDir: string, private readonly scope: string) {}
+  constructor(private readonly rootDir: string, readonly scope: string) {}
 
   private get scopeDir(): string {
     return path.join(this.rootDir, "scopes", this.scope);
@@ -70,8 +78,26 @@ export class JobStore {
     await appendJsonLine(this.getRunPath(run.jobId), runRecordSchema.parse(run));
   }
 
+  static async resolveStoresForWorkdir(rootDir: string, workdir: string): Promise<ResolvedJobStores> {
+    const preferredScope = createScopeId(workdir);
+    const legacyScope = createLegacyScopeId(workdir);
+
+    await migrateLegacyScopeIfNeeded(rootDir, legacyScope, preferredScope);
+
+    const primaryStore = new JobStore(rootDir, preferredScope);
+    const stores = [primaryStore];
+    if (legacyScope !== preferredScope && (await scopeExists(rootDir, legacyScope))) {
+      stores.push(new JobStore(rootDir, legacyScope));
+    }
+
+    return {
+      preferredScope,
+      primaryStore,
+      stores,
+    };
+  }
+
   static async listAllJobs(rootDir: string): Promise<ScopedJob[]> {
-    const fs = await import("node:fs/promises");
     const scopesRoot = path.join(rootDir, "scopes");
 
     try {
@@ -110,6 +136,51 @@ export class JobStore {
 
   getLogPath(jobId: string): string {
     return path.join(this.logsDir, `${jobId}.log`);
+  }
+}
+
+async function migrateLegacyScopeIfNeeded(rootDir: string, legacyScope: string, preferredScope: string): Promise<void> {
+  if (legacyScope === preferredScope) {
+    return;
+  }
+
+  const legacyScopePath = getScopedRootPath(rootDir, "scopes", legacyScope);
+  const preferredScopePath = getScopedRootPath(rootDir, "scopes", preferredScope);
+  const legacyExists = await pathExists(legacyScopePath);
+  const preferredExists = await pathExists(preferredScopePath);
+
+  if (!legacyExists || preferredExists) {
+    return;
+  }
+
+  await ensureDir(path.dirname(preferredScopePath));
+  await fs.rename(legacyScopePath, preferredScopePath);
+
+  const legacyLogsPath = getScopedRootPath(rootDir, "logs", legacyScope);
+  const preferredLogsPath = getScopedRootPath(rootDir, "logs", preferredScope);
+  if ((await pathExists(legacyLogsPath)) && !(await pathExists(preferredLogsPath))) {
+    await ensureDir(path.dirname(preferredLogsPath));
+    await fs.rename(legacyLogsPath, preferredLogsPath);
+  }
+}
+
+function getScopedRootPath(rootDir: string, bucket: "logs" | "scopes", scope: string): string {
+  return path.join(rootDir, bucket, scope);
+}
+
+async function scopeExists(rootDir: string, scope: string): Promise<boolean> {
+  return pathExists(getScopedRootPath(rootDir, "scopes", scope));
+}
+
+async function pathExists(targetPath: string): Promise<boolean> {
+  try {
+    await fs.access(targetPath);
+    return true;
+  } catch (error) {
+    if (isNotFound(error)) {
+      return false;
+    }
+    throw error;
   }
 }
 

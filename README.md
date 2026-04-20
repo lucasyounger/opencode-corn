@@ -100,8 +100,8 @@ export { default } from "../../dist/src/index.js"
   默认值：`~/.config/opencode/cron`
   说明：所有任务、日志、运行记录和 Gateway 状态文件的根目录
 - `defaultCommand`
-  默认值：`opencode`
-  说明：`cli` 模式下实际调用的 OpenCode 命令
+  默认值：`auto`
+  说明：`cli` 模式下实际调用的命令。默认会优先尝试 `opencode`，如果当前环境没有 `opencode`，则自动回退到 `nga`
 - `gatewayCommand`
   默认值：`opencode-cron-gateway`
   说明：用于自举 Gateway 的命令
@@ -109,7 +109,50 @@ export { default } from "../../dist/src/index.js"
   默认值：`30000`
   说明：Gateway 轮询周期，单位毫秒
 
-`rootDir` 会先展开 `~`，再解析成绝对路径。任务的 `workdir` 会被归一化后计算成一个 scope hash，用来隔离不同项目目录的任务集合。
+`rootDir` 会先展开 `~`，再解析成绝对路径。任务的 `workdir` 会被归一化后映射到一个 scope，用来隔离不同项目目录的任务集合。
+
+## Scope 说明
+
+### 为什么要有 scope
+
+`opencode-cron` 的任务、日志、运行记录和锁文件都保存在统一的全局根目录下，而不是直接写回各个项目仓库。如果没有 scope，会有几个明显问题：
+
+- 不同项目里的任务可能重名，容易互相覆盖
+- 日志、运行记录和锁会混在一起，不方便排查
+- 当前项目执行 `list` 时，很难只看到“这个项目自己的任务”
+- 系统层的调度和运行状态也缺少项目隔离
+
+所以，scope 的作用就是把“同一个 `workdir` 下的任务”归到同一个逻辑分组里。
+
+### scope 怎么生成
+
+当前实现会先对 `workdir` 做标准化，再生成：
+
+```text
+scope-<目录名slug>-<稳定哈希>
+```
+
+例如：
+
+```text
+scope-opencode-corn-<16位哈希>
+```
+
+生成逻辑的特点：
+
+- 前缀固定是 `scope-`
+- 中间部分来自工作目录最后一级目录名，便于肉眼识别
+- 最后仍保留稳定哈希，避免不同路径但同名目录产生冲突
+
+### 旧 scope 如何兼容
+
+更早的实现只使用一串纯哈希做 scope。当前版本在访问任务时会自动检测旧目录：
+
+- 如果发现旧的纯哈希 scope 存在，而新的 prefixed scope 还不存在
+- 会自动把旧的 `scopes/<old-scope>` 迁移到新的 `scopes/<new-scope>`
+- 对应的 `logs/<old-scope>` 也会一起迁移
+
+这意味着已有任务不会因为 scope 命名变更而丢失。
 
 ## 快速开始
 
@@ -165,6 +208,14 @@ export { default } from "../../dist/src/index.js"
 - `立即运行任务 <job-id>。`
 - `删除任务 <job-id>。`
 
+关于查询范围：
+
+- `list` 默认按当前 `workdir` 对应的 scope 查询
+- `get`、`pause`、`resume`、`run`、`remove` 也会先在当前 `workdir` 对应的 scope 内查找
+- Gateway 调度时才会扫描 `rootDir/scopes` 下的全部 scope
+
+这意味着如果你在不同项目目录里分别执行 `cronjob list`，默认看到的是各自项目的任务，而不是全局所有任务。
+
 ### `cron_logs`
 
 按 `jobId` 和 `workdir` 读取日志文本。如果日志文件不存在，会返回空字符串。
@@ -219,7 +270,8 @@ export { default } from "../../dist/src/index.js"
 
 当前行为：
 
-- 使用 `opencode run --dangerously-skip-permissions`
+- 默认会自动选择可用命令，优先 `opencode run`，找不到时回退到 `nga run`
+- 使用 `run --dangerously-skip-permissions`
 - 若配置了 `agent`，会自动附加 `--agent`
 - 若配置了 `providerID` 和 `modelID`，会自动附加 `--model providerID/modelID`
 - 任务 prompt 会被包装成一次无人值守的一次性执行
@@ -347,6 +399,12 @@ rootDir/
 - `gateway/gateway.log`
   保存 Gateway 自身启动和运行日志
 
+关于 scope 目录名：
+
+- `scopes/<scope>` 和 `logs/<scope>` 一一对应
+- 同一个 `workdir` 下的任务会落到同一个 scope 目录
+- 不同项目目录即使任务名相同，也会被分到不同 scope
+
 ## 平台自启动策略
 
 当前 Gateway 安装自启动的方式如下：
@@ -406,6 +464,22 @@ scopes/<scope>/runs/<jobId>.jsonl
 如果任务失败且配置了 `failureWebhookUrl`，失败通知会优先投递到它；否则回退到 `webhookUrl`。
 
 ## 常见问题
+
+### 为什么 `scopes` 目录下面不是直接用项目绝对路径
+
+因为绝对路径不适合直接做目录名：
+
+- 路径里可能包含盘符、空格、特殊字符和不同平台分隔符
+- 目录名过长会影响可读性和兼容性
+- 同名目录仍需要额外机制保证唯一性
+
+所以当前实现采用“可读前缀 + 稳定哈希”的形式，兼顾可读性和稳定唯一性。
+
+### 为什么当前项目 `list` 看不到别的项目任务
+
+因为 `cronjob list` 默认按当前 `workdir` 对应的 scope 查询。这是有意为之，目的是让你在项目 A 里只看到项目 A 的任务，避免和项目 B 混在一起。
+
+如果你想做全局巡检，可以直接查看 `rootDir/scopes` 目录，或者用 `opencode-cron-manage` 指定某个 scope 做排查。
 
 ### 任务创建成功，但没有按时执行
 

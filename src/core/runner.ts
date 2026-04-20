@@ -4,7 +4,7 @@ import { once } from "node:events";
 import { promisify } from "node:util";
 import { createOpencodeClient } from "@opencode-ai/sdk";
 import { CronJob, ExecutionResult, JobRunRecord, RunnerContext } from "./types.js";
-import { buildOpencodeRunArgs, resolveSpawnSpec } from "./process.js";
+import { buildOpencodeRunArgs, resolveAvailableRunCommand, resolveRunCommandCandidates, resolveSpawnSpec } from "./process.js";
 import { renderPrompt } from "./prompt.js";
 import { JobStore } from "../store/job-store.js";
 import { acquireLock } from "../store/lock.js";
@@ -67,12 +67,21 @@ async function executeCli(
   defaultCommand: string,
   environment?: Record<string, string>,
 ): Promise<ExecutionResult> {
-  const command = job.backend.command ?? defaultCommand;
+  const requestedCommand = job.backend.command ?? defaultCommand;
+  const resolvedCommand = await resolveAvailableRunCommand(requestedCommand, environment);
+  if (!resolvedCommand) {
+    return {
+      status: "failed",
+      output: `No compatible OpenCode CLI command was found. Tried: ${resolveRunCommandCandidates(requestedCommand).join(", ")}`,
+      reason: "cli-command-not-found",
+    };
+  }
+
   const args = buildOpencodeRunArgs(renderPrompt(job), {
     agent: job.agent,
     model: job.model,
   });
-  const spawnSpec = resolveSpawnSpec(command, args);
+  const spawnSpec = resolveSpawnSpec(resolvedCommand, args);
   const child = spawn(spawnSpec.command, spawnSpec.args, {
     cwd: job.workdir,
     env: { ...process.env, ...environment },

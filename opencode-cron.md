@@ -72,13 +72,15 @@
 动作行为：
 
 - `create`：创建任务、写入存储，并确保 Gateway 在线
-- `list`：列出当前 scope 下所有任务
-- `get`：读取指定任务
+- `list`：列出当前 `workdir` 对应 scope 下的任务
+- `get`：读取当前 `workdir` 对应 scope 下的指定任务
 - `update`：更新任务并重算 `nextRunAt`
 - `pause`：将状态改为 `paused`
 - `resume`：恢复任务并重算 `nextRunAt`
 - `run`：立即调用 Runner 执行，不等待 Gateway 轮询
 - `remove`：删除任务定义和锁文件
+
+这里的关键点是：插件层的绝大多数任务管理动作都不是“扫描全局所有任务”，而是先根据 `workdir` 解析出当前 scope，再在这个 scope 里操作任务。这样用户在某个项目目录中发出 `list`、`get`、`pause`、`resume`、`run`、`remove` 时，默认只会命中当前项目的任务集合。
 
 ### 3.3 `cron_logs` 工具
 
@@ -135,7 +137,7 @@
 
 1. 校验 `name`、`prompt`、`schedule`
 2. 归一化 `workdir`
-3. 根据 `workdir` 计算 `scope`
+3. 根据 `workdir` 计算首选 scope
 4. 组装 `CronJob`
 5. 通过 `computeNextRun()` 计算 `nextRunAt`
 6. 写入 `jobs/<jobId>.json`
@@ -146,8 +148,9 @@
 1. 加载现有任务
 2. 合并可更新字段
 3. 更新时间戳
-4. 重新计算 `nextRunAt`
-5. 如果任务仍为 `enabled`，再次确保 Gateway 在线
+4. 如果 `workdir` 改变，则重新解析目标 scope
+5. 重新计算 `nextRunAt`
+6. 如果任务仍为 `enabled`，再次确保 Gateway 在线
 
 ## 6. Gateway 启动基础设施
 
@@ -233,6 +236,7 @@ Runner 支持两种模式：
 
 - 用 [src/core/prompt.ts](src/core/prompt.ts) 包装任务 prompt
 - 用 [src/core/process.ts](src/core/process.ts) 组装 `opencode run` 参数
+- 默认优先探测 `opencode`，若当前环境不存在，则自动回退到 `nga`
 - 在配置了 `agent` / `model` 时传给 CLI
 - 收集 stdout/stderr
 - 根据退出码和超时情况决定 `success` / `failed`
@@ -327,14 +331,67 @@ rootDir/
 
 Scope 由 `workdir` 计算得出，用来隔离不同项目目录下的任务集合。
 
-### 11.2 任务存储
+为什么需要 scope：
+
+- 所有任务、日志、运行记录和锁都统一落在 `rootDir` 下
+- 如果没有 scope，不同项目的任务会直接混在一起
+- 任务名、日志、运行记录和锁文件都容易冲突
+- 用户在某个项目里执行 `list` 时，也无法自然地只看到“当前项目的任务”
+
+因此，scope 是“全局存储 + 项目隔离”之间的桥梁。
+
+当前 scope 的生成方式位于 [src/utils/paths.ts](src/utils/paths.ts)，规则是：
+
+```text
+scope-<目录名slug>-<16位稳定哈希>
+```
+
+细节如下：
+
+1. 先把 `workdir` 展开 `~` 并归一化成绝对路径
+2. 再转成小写，确保大小写差异不会影响 scope 稳定性
+3. 取最后一级目录名做 slug，提升可读性
+4. 再拼接旧算法中的 16 位稳定哈希，保证唯一性
+
+例如工作目录：
+
+```text
+L:\Data\opencode-corn
+```
+
+对应 scope 会类似：
+
+```text
+scope-opencode-corn-<16位哈希>
+```
+
+### 11.2 旧 scope 兼容与迁移
+
+早期实现的 scope 只有纯哈希，不带可读前缀。当前版本为了兼顾可读性和兼容性，在 [src/store/job-store.ts](src/store/job-store.ts) 中加入了自动迁移逻辑：
+
+- 访问某个 `workdir` 时，会同时计算新 scope 和旧 scope
+- 如果发现旧的纯哈希目录存在，而新的 prefixed 目录尚不存在
+- 会自动把 `scopes/<old-scope>` 重命名为 `scopes/<new-scope>`
+- 如果 `logs/<old-scope>` 存在，也会一起迁移到 `logs/<new-scope>`
+
+这样已有任务不会因为命名规则升级而“丢失”。
+
+### 11.3 任务存储
 
 - `upsertJob()`：写任务定义
 - `getJob()`：读单个任务
 - `listJobs()`：列出当前 scope 下任务
 - `deleteJob()`：删除任务和任务锁
 
-### 11.3 运行记录
+插件层与存储层的对应关系是：
+
+- `cronjob list` 默认只读当前 `workdir` 解析出的 scope
+- `cronjob get/update/pause/resume/run/remove` 也优先在当前 scope 内解析任务
+- `JobStore.listAllJobs()` 则会扫描 `rootDir/scopes` 下的全部 scope，供 Gateway 统一调度时使用
+
+也就是说，用户视角是“按当前项目隔离”，调度器视角才是“全局扫描所有 scope”。
+
+### 11.4 运行记录
 
 `appendRun()` 会把每次执行记录追加到 `runs/<jobId>.jsonl`。
 

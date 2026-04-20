@@ -5,7 +5,7 @@ import { CronJob } from "../core/types.js";
 import { ensureGatewayInfrastructure } from "../gateway/control.js";
 import { JobStore } from "../store/job-store.js";
 import { generateId } from "../utils/ids.js";
-import { createScopeId, normalizeAbsolutePath } from "../utils/paths.js";
+import { normalizeAbsolutePath } from "../utils/paths.js";
 import { computeNextRun, nowIso } from "../utils/time.js";
 
 const schema = tool.schema;
@@ -83,14 +83,13 @@ async function handleAction(
   context: ToolContext,
 ): Promise<string> {
   const workdir = normalizeAbsolutePath(args.workdir ?? context.directory);
-  const scope = createScopeId(workdir);
-  const store = new JobStore(options.rootDir, scope);
-  await store.initialize();
+  const resolvedStores = await JobStore.resolveStoresForWorkdir(options.rootDir, workdir);
+  await resolvedStores.primaryStore.initialize();
 
   switch (args.action) {
     case "create": {
       const job = createJob(args, workdir);
-      await store.upsertJob(job);
+      await resolvedStores.primaryStore.upsertJob(job);
       await ensureGatewayInfrastructure({
         rootDir: options.rootDir,
         gatewayCommand: options.gatewayCommand,
@@ -100,22 +99,27 @@ async function handleAction(
       return JSON.stringify(job, null, 2);
     }
     case "list": {
-      return JSON.stringify(await store.listJobs(), null, 2);
+      return JSON.stringify(await listJobs(resolvedStores.stores), null, 2);
     }
     case "get": {
       requireId(args.id);
-      return JSON.stringify((await store.getJob(args.id)) ?? null, null, 2);
+      return JSON.stringify((await findExistingEntry(resolvedStores.stores, args.id))?.job ?? null, null, 2);
     }
     case "update": {
       requireId(args.id);
-      const existing = await loadExisting(store, args.id);
+      const existingEntry = await loadExisting(resolvedStores.stores, args.id);
+      const existing = existingEntry.job;
       const nextJob = {
         ...existing,
         ...patchJob(existing, args),
         updatedAt: nowIso(),
       };
       nextJob.nextRunAt = computeNextRun(nextJob.schedule, nextJob.timezone);
-      await store.upsertJob(nextJob);
+      const targetStores = await JobStore.resolveStoresForWorkdir(options.rootDir, nextJob.workdir);
+      await targetStores.primaryStore.upsertJob(nextJob);
+      if (existingEntry.store.scope !== targetStores.primaryStore.scope) {
+        await existingEntry.store.deleteJob(nextJob.id);
+      }
       if (nextJob.status === "enabled") {
         await ensureGatewayInfrastructure({
           rootDir: options.rootDir,
@@ -128,19 +132,21 @@ async function handleAction(
     }
     case "pause": {
       requireId(args.id);
-      const existing = await loadExisting(store, args.id);
+      const existingEntry = await loadExisting(resolvedStores.stores, args.id);
+      const existing = existingEntry.job;
       existing.status = "paused";
       existing.updatedAt = nowIso();
-      await store.upsertJob(existing);
+      await existingEntry.store.upsertJob(existing);
       return JSON.stringify(existing, null, 2);
     }
     case "resume": {
       requireId(args.id);
-      const existing = await loadExisting(store, args.id);
+      const existingEntry = await loadExisting(resolvedStores.stores, args.id);
+      const existing = existingEntry.job;
       existing.status = "enabled";
       existing.updatedAt = nowIso();
       existing.nextRunAt = computeNextRun(existing.schedule, existing.timezone);
-      await store.upsertJob(existing);
+      await existingEntry.store.upsertJob(existing);
       await ensureGatewayInfrastructure({
         rootDir: options.rootDir,
         gatewayCommand: options.gatewayCommand,
@@ -151,11 +157,12 @@ async function handleAction(
     }
     case "run": {
       requireId(args.id);
+      const existingEntry = await loadExisting(resolvedStores.stores, args.id);
       const runnerModule = await import("../core/runner.js");
       const record = await runnerModule.runJob(
         {
           rootDir: options.rootDir,
-          scope,
+          scope: existingEntry.store.scope,
           command: options.defaultCommand,
         },
         args.id,
@@ -164,8 +171,9 @@ async function handleAction(
     }
     case "remove": {
       requireId(args.id);
-      const existing = await loadExisting(store, args.id);
-      await store.deleteJob(existing.id);
+      const existingEntry = await loadExisting(resolvedStores.stores, args.id);
+      await existingEntry.store.deleteJob(existingEntry.job.id);
+      const existing = existingEntry.job;
       return JSON.stringify({ removed: existing.id }, null, 2);
     }
   }
@@ -281,8 +289,26 @@ function patchJob(
   };
 }
 
-async function loadExisting(store: JobStore, id: string): Promise<CronJob> {
-  const existing = await store.getJob(id);
+async function listJobs(stores: JobStore[]): Promise<CronJob[]> {
+  const jobsByStore = await Promise.all(stores.map(async (store) => store.listJobs()));
+  return jobsByStore.flat();
+}
+
+async function findExistingEntry(
+  stores: JobStore[],
+  id: string,
+): Promise<{ store: JobStore; job: CronJob } | undefined> {
+  for (const store of stores) {
+    const existing = await store.getJob(id);
+    if (existing) {
+      return { store, job: existing };
+    }
+  }
+  return undefined;
+}
+
+async function loadExisting(stores: JobStore[], id: string): Promise<{ store: JobStore; job: CronJob }> {
+  const existing = await findExistingEntry(stores, id);
   if (!existing) {
     throw new Error(`Job not found: ${id}`);
   }
