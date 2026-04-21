@@ -1,6 +1,6 @@
 {
   "name": "@love-ai/opencode-cron",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "An OpenCode plugin that manages scheduled agent jobs through a resident gateway service.",
   "type": "module",
   "main": "dist/src/index.js",

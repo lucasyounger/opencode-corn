@@ -20,6 +20,44 @@
 
 ## 2. 当前架构总览
 
+### 2.1 部署模型
+
+`opencode-cron` 的推荐部署方式不是全局 `npm install -g`，而是作为 OpenCode 插件交给 OpenCode 自身管理。
+
+典型做法是在：
+
+```text
+~/.config/opencode/opencode.json
+```
+
+中声明插件，例如：
+
+```json
+{
+  "plugin": [
+    "@love-ui/opencode-cron@latest"
+  ]
+}
+```
+
+如果使用公开 npm 包，则包名对应为：
+
+```json
+{
+  "plugin": [
+    "@love-ai/opencode-cron@latest"
+  ]
+}
+```
+
+OpenCode 启动时会自动安装、加载并更新插件，因此对最终用户来说，它更像是“OpenCode 的一个能力扩展”，而不是一个需要单独全局部署的系统命令。
+
+这也意味着：
+
+- 日常使用时不要求用户手工执行全局安装
+- Gateway、Runner 等能力由插件包内命令提供，但生命周期由 OpenCode 驱动
+- 文档中的全局命令更适合开发、调试和排障场景，而不是主使用路径
+
 当前主链路不是“每个任务安装一个系统 cron/schtasks 项”，而是：
 
 1. 插件工具接收任务管理请求
@@ -53,6 +91,8 @@
 - `cron_logs`
 
 此外，插件会监听 `session.error` 事件，并通过 `input.client.app.log()` 写入插件级错误日志。
+
+在部署层面，插件本身预期由 OpenCode 在启动阶段装载。也就是说，用户通常只需要在 `opencode.json` 中声明插件包名，不需要额外创建 `.opencode/plugins/*.ts` 转发文件，更不需要单独全局安装插件再接入 OpenCode。
 
 ### 3.2 `cronjob` 工具
 
